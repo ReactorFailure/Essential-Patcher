@@ -1,0 +1,393 @@
+package com.leclowndu93150.essentialpatcher.httpsync;
+
+import com.google.gson.Gson;
+import com.google.gson.JsonObject;
+import com.leclowndu93150.essentialpatcher.config.PatcherConfig;
+import com.leclowndu93150.essentialpatcher.cosmetics.CosmeticSaver;
+import com.leclowndu93150.essentialpatcher.network.CosmeticSyncData;
+
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.time.Duration;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
+
+/**
+ * HTTP-side cosmetic sync against cosmetics.leclowndu93150.dev. Independent of the
+ * in-game packet sync (which only works when both peers run the patcher and the MC
+ * server forwards packets). This one works on any vanilla server because it goes
+ * through our own HTTPS service.
+ *
+ * Per-version code creates a single instance and calls:
+ *   - {@link #setMojangJoiner(MojangJoiner)}   wires the version-specific Mojang call
+ *   - {@link #onServerJoin(String, String)}    when entering a server/LAN/SP world
+ *   - {@link #onServerLeave()}                 when leaving
+ *   - {@link #onLocalCosmeticChange(Map)}      when the local outfit changes
+ */
+public final class CosmeticHttpSync {
+
+    public interface MojangJoiner {
+        /** Calls Minecraft.getInstance().getMinecraftSessionService().joinServer(...). */
+        void joinServer(String serverId) throws Exception;
+
+        /** The player's username from Minecraft.getInstance().getUser().getName(). */
+        String username();
+
+        /** The player's UUID from Minecraft.getInstance().getUser().getProfileId(). */
+        UUID uuid();
+    }
+
+    private static final Gson GSON = new Gson();
+    private static final CosmeticHttpSync INSTANCE = new CosmeticHttpSync();
+
+    public static CosmeticHttpSync get() {
+        return INSTANCE;
+    }
+
+    private final HttpClient http = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(10))
+            .build();
+    private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2, r -> {
+        Thread t = new Thread(r, "EssentialPatcher-HttpSync");
+        t.setDaemon(true);
+        return t;
+    });
+
+    private volatile MojangJoiner joiner;
+    private final AtomicReference<String> token = new AtomicReference<>();
+    private final AtomicReference<String> sessionId = new AtomicReference<>();
+    private final AtomicBoolean joined = new AtomicBoolean();
+    private final AtomicBoolean closing = new AtomicBoolean();
+    private ScheduledFuture<?> heartbeatTask;
+    private Thread sseThread;
+
+    private final ConcurrentHashMap<UUID, Map<String, String>> sessionPeers = new ConcurrentHashMap<>();
+
+    public void setMojangJoiner(MojangJoiner j) {
+        this.joiner = j;
+    }
+
+    public boolean isEnabled() {
+        PatcherConfig c = PatcherConfig.get();
+        return c.httpCosmeticSync && c.httpCosmeticSyncBaseUrl != null && !c.httpCosmeticSyncBaseUrl.isBlank();
+    }
+
+    private String baseUrl() {
+        String url = PatcherConfig.get().httpCosmeticSyncBaseUrl;
+        if (url.endsWith("/")) url = url.substring(0, url.length() - 1);
+        return url;
+    }
+
+    /**
+     * Called when the player joins a server/LAN/SP. {@code keyIngredient} is mixed into
+     * the session_id hash so different servers/worlds get different broadcast groups.
+     * {@code label} is a short tag like "smp", "lan", "sp" appended to the hash for
+     * easier debugging (not security-relevant).
+     */
+    public void onServerJoin(String keyIngredient, String label) {
+        if (!isEnabled() || joiner == null) return;
+        if (joined.get()) {
+            onServerLeave();
+        }
+        closing.set(false);
+        String sid = computeSessionId(keyIngredient, label);
+        scheduler.submit(() -> {
+            try {
+                authenticate();
+                joinSession(sid);
+                openSseStream();
+                heartbeatTask = scheduler.scheduleAtFixedRate(this::heartbeat, 30, 30, TimeUnit.SECONDS);
+                joined.set(true);
+
+                Map<String, String> local = CosmeticSaver.loadEquippedCosmetics();
+                if (!local.isEmpty()) {
+                    pushCosmetics(local);
+                }
+            } catch (Exception e) {
+                System.err.println("[EssentialPatcher] http sync join failed: " + e.getMessage());
+                joined.set(false);
+            }
+        });
+    }
+
+    public void onServerLeave() {
+        if (!joined.getAndSet(false)) return;
+        closing.set(true);
+        if (heartbeatTask != null) {
+            heartbeatTask.cancel(false);
+            heartbeatTask = null;
+        }
+        if (sseThread != null) {
+            sseThread.interrupt();
+            sseThread = null;
+        }
+        sessionPeers.clear();
+        String tk = token.get();
+        if (tk == null) return;
+        scheduler.submit(() -> {
+            try {
+                HttpRequest req = HttpRequest.newBuilder(URI.create(baseUrl() + "/api/session/leave"))
+                        .header("Authorization", "Bearer " + tk)
+                        .timeout(Duration.ofSeconds(5))
+                        .POST(HttpRequest.BodyPublishers.noBody())
+                        .build();
+                http.send(req, HttpResponse.BodyHandlers.discarding());
+            } catch (Exception ignored) {
+            }
+            token.set(null);
+            sessionId.set(null);
+        });
+    }
+
+    /** Hook called from InfraEquippedOutfitsMixin after the local outfit is saved. */
+    public void onLocalCosmeticChange(Map<String, String> equipped) {
+        if (!joined.get()) return;
+        scheduler.submit(() -> {
+            try {
+                pushCosmetics(equipped);
+            } catch (Exception e) {
+                System.err.println("[EssentialPatcher] http sync push failed: " + e.getMessage());
+            }
+        });
+    }
+
+    // ---------- internals ----------
+
+    private void authenticate() throws Exception {
+        if (joiner == null) throw new IllegalStateException("MojangJoiner not set");
+        String username = joiner.username();
+        if (username == null) throw new IllegalStateException("no username");
+
+        HttpRequest begin = HttpRequest.newBuilder(URI.create(baseUrl() + "/api/auth/begin"))
+                .header("Content-Type", "application/json")
+                .timeout(Duration.ofSeconds(10))
+                .POST(HttpRequest.BodyPublishers.ofString("{\"username\":\"" + escape(username) + "\"}"))
+                .build();
+        HttpResponse<String> beginResp = http.send(begin, HttpResponse.BodyHandlers.ofString());
+        if (beginResp.statusCode() != 200) {
+            throw new IOException("auth/begin: " + beginResp.statusCode() + " " + beginResp.body());
+        }
+        JsonObject beginJson = GSON.fromJson(beginResp.body(), JsonObject.class);
+        String serverId = beginJson.get("server_id").getAsString();
+
+        joiner.joinServer(serverId);
+
+        String body = "{\"server_id\":\"" + escape(serverId) + "\",\"username\":\"" + escape(username) + "\"}";
+        HttpRequest finish = HttpRequest.newBuilder(URI.create(baseUrl() + "/api/auth/finish"))
+                .header("Content-Type", "application/json")
+                .timeout(Duration.ofSeconds(10))
+                .POST(HttpRequest.BodyPublishers.ofString(body))
+                .build();
+        HttpResponse<String> finishResp = http.send(finish, HttpResponse.BodyHandlers.ofString());
+        if (finishResp.statusCode() != 200) {
+            throw new IOException("auth/finish: " + finishResp.statusCode() + " " + finishResp.body());
+        }
+        JsonObject finishJson = GSON.fromJson(finishResp.body(), JsonObject.class);
+        token.set(finishJson.get("token").getAsString());
+    }
+
+    private void joinSession(String sid) throws Exception {
+        String body = "{\"session_id\":\"" + escape(sid) + "\"}";
+        HttpRequest req = HttpRequest.newBuilder(URI.create(baseUrl() + "/api/session/join"))
+                .header("Authorization", "Bearer " + token.get())
+                .header("Content-Type", "application/json")
+                .timeout(Duration.ofSeconds(10))
+                .POST(HttpRequest.BodyPublishers.ofString(body))
+                .build();
+        HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
+        if (resp.statusCode() != 200) {
+            throw new IOException("session/join: " + resp.statusCode() + " " + resp.body());
+        }
+        sessionId.set(sid);
+
+        JsonObject obj = GSON.fromJson(resp.body(), JsonObject.class);
+        if (obj.has("snapshot")) {
+            for (var el : obj.getAsJsonArray("snapshot")) {
+                applyPeer(el.getAsJsonObject());
+            }
+        }
+    }
+
+    private void openSseStream() {
+        String tk = token.get();
+        if (tk == null) return;
+        sseThread = new Thread(() -> {
+            try {
+                HttpRequest req = HttpRequest.newBuilder(URI.create(baseUrl() + "/api/stream"))
+                        .header("Authorization", "Bearer " + tk)
+                        .header("Accept", "text/event-stream")
+                        .timeout(Duration.ofHours(1))
+                        .GET()
+                        .build();
+                HttpResponse<java.io.InputStream> resp = http.send(req, HttpResponse.BodyHandlers.ofInputStream());
+                if (resp.statusCode() != 200) {
+                    System.err.println("[EssentialPatcher] SSE stream rejected: " + resp.statusCode());
+                    return;
+                }
+                try (BufferedReader r = new BufferedReader(new InputStreamReader(resp.body(), StandardCharsets.UTF_8))) {
+                    String line;
+                    while (!closing.get() && (line = r.readLine()) != null) {
+                        if (line.startsWith("data: ")) {
+                            try {
+                                handleEvent(GSON.fromJson(line.substring(6), JsonObject.class));
+                            } catch (Exception e) {
+                                // ignore one malformed event
+                            }
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                if (!closing.get()) {
+                    System.err.println("[EssentialPatcher] SSE stream ended: " + e.getMessage());
+                }
+            }
+        }, "EssentialPatcher-SSE");
+        sseThread.setDaemon(true);
+        sseThread.start();
+    }
+
+    private void handleEvent(JsonObject ev) {
+        String type = ev.has("type") ? ev.get("type").getAsString() : "";
+        switch (type) {
+            case "cosmetic_changed" -> applyPeer(ev);
+            case "player_joined" -> {
+                UUID uuid = UUID.fromString(ev.get("uuid").getAsString());
+                scheduler.submit(() -> fetchAndApply(uuid));
+            }
+            case "player_left" -> {
+                try {
+                    UUID uuid = UUID.fromString(ev.get("uuid").getAsString());
+                    sessionPeers.remove(uuid);
+                } catch (Exception ignored) {
+                }
+            }
+            default -> { }
+        }
+    }
+
+    private void applyPeer(JsonObject obj) {
+        try {
+            UUID uuid = UUID.fromString(obj.get("uuid").getAsString());
+            if (joiner != null && uuid.equals(joiner.uuid())) return;
+            JsonObject equipped = obj.has("equipped") && obj.get("equipped").isJsonObject()
+                    ? obj.getAsJsonObject("equipped")
+                    : new JsonObject();
+            Map<String, String> map = new HashMap<>();
+            for (String slot : equipped.keySet()) {
+                map.put(slot, equipped.get(slot).getAsString());
+            }
+            sessionPeers.put(uuid, map);
+            CosmeticSyncData.applyRemoteCosmetics(uuid, map);
+        } catch (Exception e) {
+            System.err.println("[EssentialPatcher] applyPeer failed: " + e.getMessage());
+        }
+    }
+
+    private void fetchAndApply(UUID uuid) {
+        String tk = token.get();
+        if (tk == null) return;
+        try {
+            HttpRequest req = HttpRequest.newBuilder(URI.create(baseUrl() + "/api/cosmetics/" + uuid))
+                    .header("Authorization", "Bearer " + tk)
+                    .timeout(Duration.ofSeconds(10))
+                    .GET()
+                    .build();
+            HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
+            if (resp.statusCode() == 200) {
+                applyPeer(GSON.fromJson(resp.body(), JsonObject.class));
+            }
+        } catch (Exception e) {
+            System.err.println("[EssentialPatcher] fetch peer failed: " + e.getMessage());
+        }
+    }
+
+    private void heartbeat() {
+        if (!joined.get()) return;
+        String tk = token.get();
+        if (tk == null) return;
+        try {
+            HttpRequest req = HttpRequest.newBuilder(URI.create(baseUrl() + "/api/session/heartbeat"))
+                    .header("Authorization", "Bearer " + tk)
+                    .timeout(Duration.ofSeconds(5))
+                    .POST(HttpRequest.BodyPublishers.noBody())
+                    .build();
+            HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
+            if (resp.statusCode() == 401) {
+                // JWT expired; re-auth and rejoin.
+                String prevSid = sessionId.get();
+                joined.set(false);
+                if (prevSid != null) onServerJoin(prevSid, "reauth");
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
+    private void pushCosmetics(Map<String, String> equipped) throws Exception {
+        String tk = token.get();
+        if (tk == null) return;
+        StringBuilder body = new StringBuilder("{\"equipped\":{");
+        boolean first = true;
+        for (Map.Entry<String, String> e : equipped.entrySet()) {
+            if (!first) body.append(',');
+            first = false;
+            body.append('"').append(escape(e.getKey())).append("\":\"").append(escape(e.getValue())).append('"');
+        }
+        body.append("}}");
+        HttpRequest req = HttpRequest.newBuilder(URI.create(baseUrl() + "/api/cosmetics"))
+                .header("Authorization", "Bearer " + tk)
+                .header("Content-Type", "application/json")
+                .timeout(Duration.ofSeconds(10))
+                .PUT(HttpRequest.BodyPublishers.ofString(body.toString()))
+                .build();
+        HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
+        if (resp.statusCode() != 200) {
+            throw new IOException("PUT /api/cosmetics: " + resp.statusCode() + " " + resp.body());
+        }
+    }
+
+    private static String computeSessionId(String ingredient, String label) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            byte[] d = md.digest(ingredient.getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder(32);
+            for (int i = 0; i < 12; i++) sb.append(String.format("%02x", d[i]));
+            return label + ":" + sb;
+        } catch (Exception e) {
+            return label + ":" + Integer.toHexString(ingredient.hashCode());
+        }
+    }
+
+    private static String escape(String s) {
+        StringBuilder sb = new StringBuilder(s.length() + 4);
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            switch (c) {
+                case '"' -> sb.append("\\\"");
+                case '\\' -> sb.append("\\\\");
+                case '\n' -> sb.append("\\n");
+                case '\r' -> sb.append("\\r");
+                case '\t' -> sb.append("\\t");
+                default -> {
+                    if (c < 0x20) sb.append(String.format("\\u%04x", (int) c));
+                    else sb.append(c);
+                }
+            }
+        }
+        return sb.toString();
+    }
+}

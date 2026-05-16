@@ -2,6 +2,7 @@ package com.leclowndu93150.essentialpatcher.mixin.cosmetics;
 
 import com.leclowndu93150.essentialpatcher.config.PatcherConfig;
 import com.leclowndu93150.essentialpatcher.cosmetics.CosmeticSaver;
+import com.leclowndu93150.essentialpatcher.httpsync.CosmeticHttpSync;
 import gg.essential.network.connectionmanager.cosmetics.InfraEquippedOutfitsManager;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -30,6 +31,7 @@ public class InfraEquippedOutfitsMixin {
                 serializable.put(entry.getKey().getId(), entry.getValue().getId());
             }
             CosmeticSaver.saveEquippedCosmetics(serializable);
+            CosmeticHttpSync.get().onLocalCosmeticChange(serializable);
         } catch (Exception e) {
             System.err.println("[EssentialPatcher] Failed to save equipped cosmetics on update: " + e.getMessage());
         }

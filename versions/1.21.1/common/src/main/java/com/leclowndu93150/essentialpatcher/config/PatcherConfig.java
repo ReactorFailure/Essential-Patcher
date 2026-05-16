@@ -39,6 +39,9 @@ public class PatcherConfig {
     public boolean hideAnnouncementChannel = true;
     public boolean disableAutoUpdate = true;
 
+    public boolean httpCosmeticSync = true;
+    public String httpCosmeticSyncBaseUrl = "https://cosmetics.leclowndu93150.dev";
+
     public static PatcherConfig get() {
         if (INSTANCE == null) {
             INSTANCE = load();

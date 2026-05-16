@@ -8,14 +8,6 @@ version = "1.0.0"
 prism {
     curseMaven()
 
-    sharedCommon {
-        mixin()
-        mixinExtras()
-        dependencies {
-            localJar("libs/essential.jar")
-        }
-    }
-
     metadata {
         modId = "essentialpatcher"
         name = "Essential Patcher"
@@ -23,41 +15,26 @@ prism {
         license = "MIT"
     }
 
-    version("1.20.1") {
-        common {
-            compileOnly("curse.maven:yacl-667299:6336646")
-        }
-        fabric {
-            loaderVersion = "0.18.6"
-            fabricApi("0.92.7+1.20.1")
-            dependencies {
-                implementation("curse.maven:yacl-667299:6336639")
-            }
-        }
-        forge {
-            loaderVersion = "47.1.106"
-            loaderVersionRange = "[47,)"
-            dependencies {
-                implementation("curse.maven:yacl-667299:6336646")
-            }
-        }
-    }
-
     version("1.21.1") {
         common {
-            compileOnly("curse.maven:yacl-667299:7437845")
+            localJar("libs/essential.jar")
+            modCompileOnly("curse.maven:yacl-667299:7437845")
+            compileOnly("org.jetbrains.kotlin:kotlin-stdlib:2.1.20")
         }
         fabric {
             loaderVersion = "0.18.6"
             fabricApi("0.116.10+1.21.1")
             dependencies {
-                implementation("curse.maven:yacl-667299:7437845")
+                localJar("libs/essential.jar")
+                modImplementation("curse.maven:yacl-667299:7437855")
+                modCompileOnly("curse.maven:modmenu-308702:7808443")
             }
         }
         neoforge {
             loaderVersion = "21.1.223"
             loaderVersionRange = "[4,)"
             dependencies {
+                localJar("libs/essential.jar")
                 implementation("curse.maven:yacl-667299:7437845")
             }
         }
