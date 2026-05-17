@@ -27,6 +27,7 @@ public class ConnectionManagerMixin {
         return className.equals("ClientCheckoutCoinBundlePacket")
                 || className.equals("ClientCheckoutDynamicCoinBundlePacket")
                 || className.equals("ClientCheckoutStoreBundlePacket")
-                || className.equals("ClientCheckoutPartnerCodeRequestDataPacket");
+                || className.equals("ClientCheckoutPartnerCodeRequestDataPacket")
+                || className.equals("ClientCheckoutCosmeticsPacket");
     }
 }

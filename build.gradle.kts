@@ -36,6 +36,7 @@ prism {
             dependencies {
                 localJar("libs/essential.jar")
                 implementation("curse.maven:yacl-667299:7437845")
+                runtimeOnly("curse.maven:essential-mod-546670:7806141")
             }
         }
     }

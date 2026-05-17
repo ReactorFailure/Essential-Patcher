@@ -3,7 +3,7 @@ package com.leclowndu93150.essentialpatcher.cosmetics;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.reflect.TypeToken;
-import com.leclowndu93150.essentialpatcher.platform.Platform;
+import net.minecraft.client.Minecraft;
 
 import java.io.IOException;
 import java.lang.reflect.Type;
@@ -18,7 +18,7 @@ public class CosmeticSaver {
     private static final Type MAP_TYPE = new TypeToken<Map<String, String>>() {}.getType();
 
     private static Path savePath() {
-        return Platform.Holder.get().getConfigDir().resolve("essentialpatcher-equipped.json");
+        return Minecraft.getInstance().gameDirectory.toPath().resolve("config").resolve("essentialpatcher-equipped.json");
     }
 
     public static void saveEquippedCosmetics(Map<String, String> slotToCosmetic) {

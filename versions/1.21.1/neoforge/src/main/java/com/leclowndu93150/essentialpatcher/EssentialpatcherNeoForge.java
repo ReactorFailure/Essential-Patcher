@@ -6,13 +6,11 @@ import com.leclowndu93150.essentialpatcher.httpsync.CosmeticHttpSync;
 import com.leclowndu93150.essentialpatcher.httpsync.SessionKey;
 import com.leclowndu93150.essentialpatcher.network.CosmeticSyncData;
 import com.leclowndu93150.essentialpatcher.network.CosmeticSyncPayload;
-import com.leclowndu93150.essentialpatcher.platform.Platform;
 import net.minecraft.client.Minecraft;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModLoadingContext;
 import net.neoforged.fml.common.Mod;
-import net.neoforged.fml.loading.FMLPaths;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.gui.IConfigScreenFactory;
 import net.neoforged.neoforge.common.NeoForge;
@@ -30,13 +28,6 @@ import java.util.UUID;
 public class EssentialpatcherNeoForge {
 
     public EssentialpatcherNeoForge(IEventBus modBus) {
-        Platform.Holder.set(new Platform() {
-            @Override
-            public Path getConfigDir() { return FMLPaths.CONFIGDIR.get(); }
-            @Override
-            public Path getGameDir() { return FMLPaths.GAMEDIR.get(); }
-        });
-
         PatcherConfig config = PatcherConfig.get();
         ModLoadingContext.get().registerExtensionPoint(IConfigScreenFactory.class,
                 () -> (container, parent) -> PatcherConfigScreen.create(parent));
@@ -116,7 +107,7 @@ public class EssentialpatcherNeoForge {
 
     static void disableEssentialAutoUpdate(String mcVersion) {
         try {
-            Path essentialDir = Platform.Holder.get().getGameDir().resolve("essential");
+            Path essentialDir = Minecraft.getInstance().gameDirectory.toPath().resolve("essential");
             Path configFile = essentialDir.resolve("stage2." + mcVersion + ".properties");
             Properties props = new Properties();
             if (Files.exists(configFile)) {

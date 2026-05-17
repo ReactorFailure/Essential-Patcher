@@ -5,6 +5,8 @@ import com.google.gson.JsonObject;
 import com.leclowndu93150.essentialpatcher.config.PatcherConfig;
 import com.leclowndu93150.essentialpatcher.cosmetics.CosmeticSaver;
 import com.leclowndu93150.essentialpatcher.network.CosmeticSyncData;
+import gg.essential.Essential;
+import gg.essential.mod.cosmetics.CosmeticSlot;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -166,6 +168,19 @@ public final class CosmeticHttpSync {
         });
     }
 
+    /** Hook called from EmoteWheelMixin when the user clicks an emote in the wheel. */
+    public void onLocalEmoteTrigger(String slot, String emoteId) {
+        if (!joined.get()) return;
+        if (slot == null || emoteId == null) return;
+        scheduler.submit(() -> {
+            try {
+                pushTrigger(slot, emoteId);
+            } catch (Exception e) {
+                System.err.println("[EssentialPatcher] http sync trigger failed: " + e.getMessage());
+            }
+        });
+    }
+
     // ---------- internals ----------
 
     private void authenticate() throws Exception {
@@ -265,6 +280,7 @@ public final class CosmeticHttpSync {
         String type = ev.has("type") ? ev.get("type").getAsString() : "";
         switch (type) {
             case "cosmetic_changed" -> applyPeer(ev);
+            case "cosmetic_trigger" -> applyTrigger(ev);
             case "player_joined" -> {
                 UUID uuid = UUID.fromString(ev.get("uuid").getAsString());
                 scheduler.submit(() -> fetchAndApply(uuid));
@@ -277,6 +293,21 @@ public final class CosmeticHttpSync {
                 }
             }
             default -> { }
+        }
+    }
+
+    private void applyTrigger(JsonObject obj) {
+        try {
+            UUID uuid = UUID.fromString(obj.get("uuid").getAsString());
+            if (joiner != null && uuid.equals(joiner.uuid())) return;
+            String slot = obj.has("slot") ? obj.get("slot").getAsString() : null;
+            String triggerName = obj.has("trigger") ? obj.get("trigger").getAsString() : null;
+            if (slot == null || triggerName == null) return;
+
+            Essential.getInstance().getCosmeticEventEmitter()
+                    .triggerEvent(uuid, CosmeticSlot.Companion.of(slot), triggerName);
+        } catch (Exception e) {
+            System.err.println("[EssentialPatcher] applyTrigger failed: " + e.getMessage());
         }
     }
 
@@ -357,6 +388,22 @@ public final class CosmeticHttpSync {
         HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
         if (resp.statusCode() != 200) {
             throw new IOException("PUT /api/cosmetics: " + resp.statusCode() + " " + resp.body());
+        }
+    }
+
+    private void pushTrigger(String slot, String triggerName) throws Exception {
+        String tk = token.get();
+        if (tk == null) return;
+        String body = "{\"slot\":\"" + escape(slot) + "\",\"trigger\":\"" + escape(triggerName) + "\"}";
+        HttpRequest req = HttpRequest.newBuilder(URI.create(baseUrl() + "/api/trigger"))
+                .header("Authorization", "Bearer " + tk)
+                .header("Content-Type", "application/json")
+                .timeout(Duration.ofSeconds(5))
+                .POST(HttpRequest.BodyPublishers.ofString(body))
+                .build();
+        HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
+        if (resp.statusCode() != 200) {
+            throw new IOException("POST /api/trigger: " + resp.statusCode() + " " + resp.body());
         }
     }
 

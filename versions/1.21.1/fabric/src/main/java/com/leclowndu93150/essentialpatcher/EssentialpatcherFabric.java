@@ -5,13 +5,11 @@ import com.leclowndu93150.essentialpatcher.httpsync.CosmeticHttpSync;
 import com.leclowndu93150.essentialpatcher.httpsync.SessionKey;
 import com.leclowndu93150.essentialpatcher.network.CosmeticSyncData;
 import com.leclowndu93150.essentialpatcher.network.CosmeticSyncPayload;
-import com.leclowndu93150.essentialpatcher.platform.Platform;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
-import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
 
 import java.util.UUID;
@@ -25,13 +23,6 @@ public class EssentialpatcherFabric implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
-        Platform.Holder.set(new Platform() {
-            @Override
-            public Path getConfigDir() { return FabricLoader.getInstance().getConfigDir(); }
-            @Override
-            public Path getGameDir() { return FabricLoader.getInstance().getGameDir(); }
-        });
-
         PatcherConfig config = PatcherConfig.get();
 
         PayloadTypeRegistry.playC2S().register(CosmeticSyncPayload.TYPE, CosmeticSyncPayload.CODEC);
@@ -97,7 +88,7 @@ public class EssentialpatcherFabric implements ClientModInitializer {
 
     static void disableEssentialAutoUpdate(String mcVersion) {
         try {
-            Path essentialDir = Platform.Holder.get().getGameDir().resolve("essential");
+            Path essentialDir = Minecraft.getInstance().gameDirectory.toPath().resolve("essential");
             Path configFile = essentialDir.resolve("stage2." + mcVersion + ".properties");
             Properties props = new Properties();
             if (Files.exists(configFile)) {

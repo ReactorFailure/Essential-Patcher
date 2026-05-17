@@ -2,7 +2,7 @@ package com.leclowndu93150.essentialpatcher.config;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import com.leclowndu93150.essentialpatcher.platform.Platform;
+import net.minecraft.client.Minecraft;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -50,7 +50,7 @@ public class PatcherConfig {
     }
 
     private static Path getConfigPath() {
-        return Platform.Holder.get().getConfigDir().resolve("essentialpatcher.json");
+        return Minecraft.getInstance().gameDirectory.toPath().resolve("config").resolve("essentialpatcher.json");
     }
 
     private static PatcherConfig load() {

@@ -7,6 +7,7 @@
     "cosmetics.CosmeticsManagerMixin",
     "cosmetics.PricingInfoMixin",
     "cosmetics.InfraEquippedOutfitsMixin",
+    "cosmetics.EmoteWheelMixin",
     "telemetry.TelemetryManagerMixin",
     "telemetry.ImpressionTelemetryMixin",
     "telemetry.FPSTelemetryMixin",

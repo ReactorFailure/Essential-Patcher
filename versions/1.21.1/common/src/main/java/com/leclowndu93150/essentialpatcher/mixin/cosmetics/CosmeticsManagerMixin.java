@@ -6,6 +6,7 @@ import gg.essential.cosmetics.model.CosmeticUnlockData;
 import gg.essential.event.client.ClientTickEvent;
 import gg.essential.gui.elementa.state.v2.MutableState;
 import gg.essential.mod.cosmetics.CosmeticSlot;
+import gg.essential.network.connectionmanager.cosmetics.CosmeticsData;
 import gg.essential.network.connectionmanager.cosmetics.CosmeticsManager;
 import gg.essential.network.connectionmanager.cosmetics.InfraEquippedOutfitsManager;
 import org.spongepowered.asm.mixin.Mixin;
@@ -14,11 +15,14 @@ import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 
 @Mixin(value = CosmeticsManager.class, remap = false)
 public abstract class CosmeticsManagerMixin {
@@ -32,8 +36,17 @@ public abstract class CosmeticsManagerMixin {
     @Shadow
     private MutableState<Boolean> cosmeticsLoaded;
 
+    @Shadow
+    private CosmeticsData cosmeticsData;
+
+    @Shadow
+    private MutableState<Map<String, CosmeticUnlockData>> unlockedCosmeticsData;
+
     @Unique
     private boolean essentialPatcher$hasUnlockedThisSession = false;
+
+    @Unique
+    private int essentialPatcher$lastCatalogSize = -1;
 
     @Inject(method = "addUnlockedCosmeticsData", at = @At("RETURN"))
     private void onUnlockedCosmeticsReceived(Map<String, CosmeticUnlockData> unlockedCosmeticsData, CallbackInfo ci) {
@@ -46,24 +59,41 @@ public abstract class CosmeticsManagerMixin {
 
     @Inject(method = "tick", at = @At("RETURN"))
     private void onTick(ClientTickEvent event, CallbackInfo ci) {
-        if (PatcherConfig.get().unlockAllCosmetics && !essentialPatcher$hasUnlockedThisSession) {
-            if (cosmeticsLoaded.getUntracked()) {
-                unlockAllCosmetics();
-                essentialPatcher$hasUnlockedThisSession = true;
-                essentialPatcher$restoreOutfit();
-            }
+        if (!PatcherConfig.get().unlockAllCosmetics) return;
+        if (!cosmeticsLoaded.getUntracked()) return;
+
+        int catalogSize = cosmeticsData.getCosmetics().get().size();
+        if (catalogSize == essentialPatcher$lastCatalogSize) return;
+        essentialPatcher$lastCatalogSize = catalogSize;
+
+        unlockAllCosmetics();
+        if (!essentialPatcher$hasUnlockedThisSession) {
+            essentialPatcher$hasUnlockedThisSession = true;
+            essentialPatcher$restoreOutfit();
         }
     }
 
     @Inject(method = "resetState", at = @At("HEAD"))
     private void onResetState(CallbackInfo ci) {
         essentialPatcher$hasUnlockedThisSession = false;
+        essentialPatcher$lastCatalogSize = -1;
     }
 
     @Inject(method = "removeUnlockedCosmetics", at = @At("HEAD"), cancellable = true)
     private void onRevokeCosmetics(CallbackInfo ci) {
         if (PatcherConfig.get().unlockAllCosmetics) {
             ci.cancel();
+        }
+    }
+
+    @Inject(method = "claimFreeItems", at = @At("HEAD"), cancellable = true)
+    private void onClaimFreeItems(Set<String> ids, CallbackInfoReturnable<CompletableFuture<Boolean>> cir) {
+        if (PatcherConfig.get().unlockAllCosmetics) {
+            // The "claim free" flow normally sends a checkout packet to Essential's server.
+            // Since showAllFree makes everything appear free, that server-side check fails.
+            // Short-circuit with a successful future so the GUI plays the unlock toast and
+            // sound, and our existing unlockAllCosmetics path already handles the visual.
+            cir.setReturnValue(CompletableFuture.completedFuture(true));
         }
     }
 
