@@ -1,4 +1,5 @@
 <div align="center">
+  <img src="icon.png" alt="Essential Patcher" width="128">
   <h1>Essential Patcher</h1>
   <a href="https://www.curseforge.com/minecraft/mc-mods/essential-patcher">Download on CurseForge</a>
 </div>

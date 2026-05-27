@@ -6,6 +6,7 @@ license = "MIT"
 modId = "essentialpatcher"
 version = "${version}"
 displayName = "Essential Patcher"
+logoFile = "icon.png"
 description = "Debloats and patches the Essential mod. Unlock all cosmetics client-side, disable telemetry, remove ads/sale banners, block checkout packets, and more. Fully configurable via YACL."
 
 [[dependencies.essentialpatcher]]

@@ -3,7 +3,7 @@ plugins {
 }
 
 group = "com.leclowndu93150"
-version = "1.0.2"
+version = "1.0.3"
 
 prism {
     curseMaven()
@@ -37,6 +37,9 @@ prism {
         fabric {
             loaderVersion = "0.18.6"
             fabricApi("0.116.10+1.21.1")
+            mixins {
+                disableAutoDetect()
+            }
             dependencies {
                 localJar("libs/essential.jar")
                 modImplementation("curse.maven:yacl-667299:7437855")
@@ -64,6 +67,9 @@ prism {
         fabric {
             loaderVersion = "0.18.6"
             fabricApi("0.149.1+26.1.2")
+            mixins {
+                disableAutoDetect()
+            }
             dependencies {
                 localJar("libs/essential-26.1.2.jar")
                 modImplementation("curse.maven:yacl-667299:7904436")
@@ -82,6 +88,9 @@ prism {
         fabric {
             loaderVersion = "0.18.6"
             fabricApi("0.141.4+1.21.11")
+            mixins {
+                disableAutoDetect()
+            }
             dependencies {
                 localJar("libs/essential-1.21.11.jar")
                 modImplementation("curse.maven:yacl-667299:7437843")
@@ -100,6 +109,9 @@ prism {
         fabric {
             loaderVersion = "0.16.14"
             fabricApi("0.92.3+1.20.1")
+            mixins {
+                disableAutoDetect()
+            }
             dependencies {
                 localJar("libs/essential-1.20.1.jar")
                 modImplementation("curse.maven:yacl-667299:6336639")
