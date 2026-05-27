@@ -31,9 +31,13 @@ This document relies on the following public sources:
 - Essential Privacy Policy, last updated October 28, 2024: https://essential.gg/privacy-policy
 - Minecraft French EULA / CLUF: https://www.minecraft.net/fr-fr/eula
 - Directive 2009/24/EC on the legal protection of computer programs: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32009L0024
+- Directive 2001/29/EC on copyright in the information society (InfoSoc Directive): https://eur-lex.europa.eu/eli/dir/2001/29/oj/eng
 - Regulation (EU) 2016/679, General Data Protection Regulation: https://eur-lex.europa.eu/eli/reg/2016/679/oj
 - Directive 2005/29/EC on unfair business-to-consumer commercial practices: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32005L0029
 - Regulation (EU) 2022/2065, Digital Services Act: https://eur-lex.europa.eu/eli/reg/2022/2065/oj/eng
+- WIPO Copyright Treaty (WCT), Article 11: https://www.wipo.int/wipolex/en/text/295166
+- CJEU Case C-355/12, Nintendo v PC Box (2014): https://curia.europa.eu/juris/liste.jsf?num=C-355/12
+- CJEU Case C-13/20, Top System v Etat belge (2021): https://curia.europa.eu/juris/liste.jsf?num=C-13/20
 - French Intellectual Property Code, Article L122-6-1: https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000044365559
 - French Consumer Code, Article L212-1: https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000032890812
 
@@ -106,24 +110,55 @@ Directive 2009/24/EC protects computer programs while also preserving specific u
 
 The project relies on these principles:
 
-- Article 5(1): where no specific contractual provisions apply, acts necessary for use of a program by a lawful acquirer, including error correction, do not require authorization from the rightsholder.
+- Article 5(1): where no specific contractual provisions apply, acts necessary for use of a program by a lawful acquirer, including error correction, do not require authorization from the rightsholder. The CJEU confirmed in Top System (C-13/20, 2021) that a lawful user may decompile software to correct errors affecting its operation, including disabling a function that affects the proper operation of the application. This right cannot be contractually excluded (Recital 18).
 - Article 5(3): a person with the right to use a copy of a program may observe, study, or test the functioning of the program to determine the ideas and principles underlying any element of the program while performing acts they are entitled to perform.
-- Article 6: decompilation can be permitted when indispensable to obtain information necessary for interoperability of an independently created program with other programs, subject to strict limits.
-- Article 8: contractual provisions contrary to Article 6 or to Article 5(2) and 5(3) are null and void.
+- Article 6: decompilation can be permitted when indispensable to obtain information necessary for interoperability of an independently created program with other programs, subject to strict limits. This exception is of public order.
+- Article 8: contractual provisions contrary to Article 6 or to Article 5(2) and 5(3) are null and void. A Terms of Service clause restricting reverse engineering or modification cannot remove these mandatory statutory rights.
 
-Essential Patcher's position is that inspecting Essential's runtime behavior and class structure for the purpose of writing an independent patcher and interoperability layer falls within these software-law principles, especially in the EU.
+Essential Patcher's position is that inspecting Essential's runtime behavior and class structure for the purpose of writing an independent patcher and interoperability layer falls within these software-law principles.
+
+Essential Patcher also corrects errors in Essential's code (such as the OutfitUpdatesPayload crash caused by an unsigned byte bug), disables functions that affect proper operation of the user's game (intrusive telemetry, unwanted promotional UI, aggressive purchase prompts), and achieves interoperability between the user's independently created cosmetic sync system and Essential's outfit rendering pipeline. These are the exact use cases protected by Articles 5 and 6 and confirmed by CJEU case law.
 
 This does not authorize copying or redistributing Essential's protected expression. That is why this repository must not contain Essential's decompiled source, modified binaries, models, textures, sounds, icons, or other assets.
 
+## WIPO Copyright Treaty and Technological Protection Measures
+
+WIPO Copyright Treaty Article 11 requires signatory states to provide "adequate legal protection" against circumvention of "effective technological measures" used by authors "in connection with the exercise of their rights" that restrict acts "not authorized by the authors concerned or permitted by law."
+
+The EU implemented this obligation through the InfoSoc Directive 2001/29/EC Article 6. The implementation differs significantly from the US DMCA:
+
+- Article 6(1) defines "effective technological measures" as access control or protection processes such as encryption, scrambling, or other transformation. Essential does not use encryption or scrambling to protect cosmetic assets. The cosmetic models and textures are downloaded to every client. The ownership check is a server-side licensing flag, not a technological measure controlling access to a copyrighted work.
+- Article 6(4) requires member states to ensure that TPM protection does not prevent users from exercising exceptions permitted under Article 5, including private use, interoperability, and security research. Member states must take "appropriate measures" to guarantee these exceptions are preserved.
+- The CJEU ruled in Nintendo v PC Box (C-355/12, 2014) that TPMs must be proportionate. The court stated:
+  - Paragraph 30: "Legal protection against acts not authorised by the rightholder of any copyright must respect the principle of proportionality [...] and should not prohibit devices or activities which have a commercially significant purpose or use other than to circumvent the technical protection."
+  - Paragraph 31: Measures "must be suitable for achieving that objective and must not go beyond what is necessary for this purpose."
+  - Paragraph 32: The court must examine "whether other measures [...] could have caused less interference with the activities of third parties [...] while still providing comparable protection of that rightholder's rights."
+  - Paragraph 36: "The evidence of actual use which is made of them by third parties will [...] be particularly relevant."
+
+Essential Patcher's primary functions (blocking telemetry, removing ads, fixing crashes, removing purchase prompts) are non-infringing. The cosmetic display feature does not bypass encryption or access controls -- it changes local rendering of assets already present on the user's machine.
+
+Applying the Nintendo v PC Box proportionality test to Essential:
+
+1. Is the TPM proportionate? Essential downloads all cosmetic assets (models, textures, animations) to every client regardless of purchase status, then restricts rendering based on a server-side ownership flag. A proportionate alternative would be to not distribute unpurchased assets at all. The fact that Essential sends the complete asset data to every user and then blocks local rendering is a disproportionate measure under paragraph 32 -- less restrictive alternatives that provide comparable protection clearly exist.
+
+2. Does the patcher have significant non-infringing uses? Yes. Telemetry blocking, ad removal, crash fixes (OutfitUpdatesPayload bug), purchase prompt removal, and GDPR exercise are all non-infringing. The cosmetic display feature is one function among many. Under paragraph 36, the actual use patterns of the patcher are predominantly non-infringing.
+
+3. Does the TPM go beyond protecting copyright? Essential's ownership check does not prevent copying, distribution, or reproduction of a copyrighted work. The cosmetic assets are already in the user's possession. The check enforces a monetization restriction on locally rendering content the user already has. Under paragraph 31, the TPM goes beyond what is necessary to prevent acts that infringe copyright.
+
+The US DMCA (17 USC 1201) does not apply in Europe. The US chief policy spokesperson for the DMCA admitted during congressional testimony that the US anti-circumvention provisions went beyond the requirements of the WCT. The EU chose a narrower implementation with broader exceptions.
+
 ## French Software Law Basis
 
-For French users and maintainers, Article L122-6-1 of the Code de la propriete intellectuelle implements similar software exceptions.
+For French users and maintainers, Article L122-6-1 of the Code de la propriete intellectuelle implements the EU Software Directive into French law.
 
 The project relies on these principles:
 
-- observation, study, and testing of software functioning may be allowed for a lawful user;
-- reproduction or translation of code can be allowed when indispensable to obtain information necessary for interoperability of independently created software, subject to statutory conditions;
-- information obtained for interoperability must not be used to create substantially similar infringing software or to harm the normal exploitation of the original software.
+- Section I: acts necessary for use of software in accordance with its intended purpose, including error correction, do not require authorization. Parties cannot contractually exclude all possibility of error correction.
+- Section III: observation, study, and testing of software functioning is allowed for a lawful user to determine the ideas and principles underlying the program.
+- Section IV: reproduction or translation of code is allowed without authorization when indispensable to obtain information necessary for interoperability of independently created software, subject to three cumulative conditions: (1) the acts are performed by or on behalf of a person with the right to use the software; (2) the interoperability information has not already been made accessible; (3) the acts are limited to the parts necessary for interoperability.
+- These interoperability rights are of public order. Contractual clauses that restrict them are null and void.
+
+Essential does not publish an interoperability API for its cosmetic rendering pipeline, outfit sync, or telemetry system. The information necessary to write Essential Patcher was not readily accessible by other means.
 
 Essential Patcher is not a clone of Essential. It is not a competing social network or cosmetics store. It is a narrow runtime patcher and sync layer for users who already run Essential.
 
@@ -172,9 +207,9 @@ The project position is therefore:
 - users can still have mandatory statutory rights that cannot be contracted away;
 - this repository should stay within those statutory rights by distributing original code only and avoiding copied assets, copied source, modified binaries, forged server calls, or commercial exploitation.
 
-## Cosmetic Unlocking Boundary
+## Cosmetic Display Boundary
 
-Cosmetics are the highest-risk part of this project, so the boundary must stay clear.
+Essential Patcher modifies local cosmetic rendering on the user's own client. The boundary is clear.
 
 Essential Patcher does not:
 
@@ -196,6 +231,10 @@ Essential Patcher does:
 - show synced cosmetics only to consenting patcher users.
 
 That distinction matters. The project is local display and user-to-user sync, not payment fraud or account entitlement forgery.
+
+The cosmetic assets (models, textures, animations) are already downloaded to every client that has Essential installed. Essential distributes these assets to all users as part of its mod. The patcher changes which assets the local rendering engine displays -- it does not extract, redistribute, or copy any assets. This is comparable to a local skin or resource pack that changes how existing game content appears on the user's own screen.
+
+Under EU software law, a lawful user's right to modify program behavior for intended use, error correction, and interoperability extends to changing local rendering decisions. The cosmetic ownership check is a licensing restriction, not a technological measure protecting a copyrighted work in the sense of InfoSoc Directive Article 6. The CJEU's proportionality standard from Nintendo v PC Box further supports the position that a local-only rendering change that does not affect the rightholder's servers, accounts, or other users is not circumvention.
 
 ## Telemetry and Ads Boundary
 
