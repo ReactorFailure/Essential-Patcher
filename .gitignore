@@ -65,4 +65,4 @@ desktop.ini
 *.bak
 *.swp
 *~
-libs/essential.jar
+libs/essential*.jar
