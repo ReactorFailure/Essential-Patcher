@@ -6,24 +6,24 @@ import com.leclowndu93150.essentialpatcher.httpsync.CosmeticHttpSync;
 import com.leclowndu93150.essentialpatcher.httpsync.EssentialSpsSyncListener;
 import com.leclowndu93150.essentialpatcher.httpsync.SessionKey;
 import net.minecraft.client.Minecraft;
-import net.neoforged.fml.ModList;
-import net.neoforged.bus.api.IEventBus;
-import net.neoforged.fml.ModLoadingContext;
-import net.neoforged.fml.common.Mod;
-import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
-import net.neoforged.neoforge.client.gui.IConfigScreenFactory;
-import net.neoforged.neoforge.common.NeoForge;
+import net.minecraftforge.client.ConfigScreenHandler;
+import net.minecraftforge.client.event.ClientPlayerNetworkEvent;
+import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.fml.ModList;
+import net.minecraftforge.fml.ModLoadingContext;
+import net.minecraftforge.fml.common.Mod;
 
 import java.io.OutputStream;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Properties;
 import java.util.UUID;
 
 @Mod("essentialpatcher")
-public class EssentialpatcherNeoForge {
+public class EssentialpatcherForge {
 
-    public EssentialpatcherNeoForge(IEventBus modBus) {
+    public EssentialpatcherForge() {
         CompatibilityTracker.setPlatformVersionProvider(() -> {
             try {
                 return ModList.get()
@@ -35,16 +35,16 @@ public class EssentialpatcherNeoForge {
             }
         });
         PatcherConfig config = PatcherConfig.get();
-        ModLoadingContext.get().registerExtensionPoint(IConfigScreenFactory.class,
-                () -> (container, parent) -> PatcherConfigScreen.create(parent));
-        NeoForge.EVENT_BUS.addListener(this::onPlayerJoin);
-        NeoForge.EVENT_BUS.addListener((ClientPlayerNetworkEvent.LoggingOut e) -> CosmeticHttpSync.get().onServerLeave());
+        ModLoadingContext.get().registerExtensionPoint(ConfigScreenHandler.ConfigScreenFactory.class,
+                () -> new ConfigScreenHandler.ConfigScreenFactory((mc, parent) -> PatcherConfigScreen.create(parent)));
+        MinecraftForge.EVENT_BUS.addListener(this::onPlayerJoin);
+        MinecraftForge.EVENT_BUS.addListener(this::onPlayerLeave);
 
         CosmeticHttpSync.get().setMojangJoiner(new CosmeticHttpSync.MojangJoiner() {
             @Override
             public void joinServer(String serverId) throws Exception {
                 Minecraft mc = Minecraft.getInstance();
-                mc.getMinecraftSessionService().joinServer(mc.getUser().getProfileId(), mc.getUser().getAccessToken(), serverId);
+                mc.getMinecraftSessionService().joinServer(mc.getUser().getGameProfile(), mc.getUser().getAccessToken(), serverId);
             }
 
             @Override
@@ -60,7 +60,7 @@ public class EssentialpatcherNeoForge {
         EssentialSpsSyncListener.register();
 
         if (config.disableAutoUpdate) {
-            disableEssentialAutoUpdate("1.21.1");
+            disableEssentialAutoUpdate("1.20.1");
         }
     }
 
@@ -73,13 +73,17 @@ public class EssentialpatcherNeoForge {
         }
     }
 
+    private void onPlayerLeave(ClientPlayerNetworkEvent.LoggingOut event) {
+        CosmeticHttpSync.get().onServerLeave();
+    }
+
     static void disableEssentialAutoUpdate(String mcVersion) {
         try {
             Path essentialDir = Minecraft.getInstance().gameDirectory.toPath().resolve("essential");
             Path configFile = essentialDir.resolve("stage2." + mcVersion + ".properties");
             Properties props = new Properties();
             if (Files.exists(configFile)) {
-                try (var in = Files.newInputStream(configFile)) {
+                try (InputStream in = Files.newInputStream(configFile)) {
                     props.load(in);
                 }
             }
